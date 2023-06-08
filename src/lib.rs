@@ -66,12 +66,19 @@ mod crdt {
         }
     }
 
+    #[derive(Clone)]
     struct Clock {
         val: u32,
         children: Option<Children>,
     }
+    #[derive(Clone)]
     struct Children {
         l: Box<Clock>,
         r: Box<Clock>,
+    }
+    impl Clock {
+        fn event(&mut self, id: &ID) {
+            fn fill(val: &Clock, id: &ID) -> Option<Clock> {}
+        }
     }
 }

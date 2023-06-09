@@ -4,42 +4,28 @@ mod crdt {
     #[derive(Clone)]
     enum ID {
         Base(bool),
-        Parent { l: Box<ID>, r: Box<ID> },
+        Parent(Box<(ID, ID)>),
     }
     impl ID {
         fn split(&mut self) -> Self {
             match self {
                 Self::Base(true) => {
-                    *self = Self::Parent {
-                        l: Box::new(Self::Base(true)),
-                        r: Box::new(Self::Base(false)),
-                    };
-
-                    Self::Parent {
-                        l: Box::new(Self::Base(false)),
-                        r: Box::new(Self::Base(true)),
-                    }
+                    *self = Self::Parent(Box::new((Self::Base(true), Self::Base(false))));
+                    Self::Parent(Box::new((Self::Base(false), Self::Base(true))))
                 }
                 Self::Base(false) => Self::Base(false),
-                Self::Parent { l, r } => match (&mut **l, &mut **r) {
-                    (Self::Base(false), r) => Self::Parent {
-                        l: Box::new(Self::Base(false)),
-                        r: Box::new(r.split()),
-                    },
-                    (l, Self::Base(false)) => Self::Parent {
-                        l: Box::new(l.split()),
-                        r: Box::new(Self::Base(false)),
-                    },
+                Self::Parent(val) => match &mut **val {
+                    (Self::Base(false), r) => {
+                        Self::Parent(Box::new((Self::Base(false), r.split())))
+                    }
+                    (l, Self::Base(false)) => {
+                        Self::Parent(Box::new((l.split(), Self::Base(false))))
+                    }
                     (l, r) => {
-                        let split = Self::Parent {
-                            l: Box::new(Self::Base(false)),
-                            r: Box::new(r.clone()),
-                        };
+                        let split = Self::Parent(Box::new((Self::Base(false), r.clone())));
 
-                        *self = Self::Parent {
-                            l: Box::new(l.clone()),
-                            r: Box::new(Self::Base(false)),
-                        };
+                        *self = Self::Parent(Box::new((l.clone(), Self::Base(false))));
+
                         split
                     }
                 },
@@ -50,14 +36,14 @@ mod crdt {
             match (&mut *self, other) {
                 (val @ Self::Base(false), r) => *val = r,
                 (_, Self::Base(false)) => (),
-                (Self::Parent { l: l1, r: r1 }, Self::Parent { l: l2, r: r2 }) => {
-                    l1.join(*l2);
-                    r1.join(*r2);
+                (Self::Parent(children_1), Self::Parent(children_2)) => {
+                    children_1.0.join(children_2.0);
+                    children_1.1.join(children_2.1);
                 }
                 _ => panic!("tried to merge two overlapping ids together"),
             }
-            if let Self::Parent { l, r } = self {
-                if let (Self::Base(l), Self::Base(r)) = (&**l, &**r) {
+            if let Self::Parent(children) = self {
+                if let (Self::Base(l), Self::Base(r)) = &**children {
                     if l == r {
                         *self = Self::Base(*l);
                     }

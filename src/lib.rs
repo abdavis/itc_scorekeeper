@@ -66,19 +66,25 @@ mod crdt {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     struct Clock {
         val: u32,
-        children: Option<Children>,
+        children: Option<Box<(Clock, Clock)>>,
     }
-    #[derive(Clone)]
-    struct Children {
-        l: Box<Clock>,
-        r: Box<Clock>,
-    }
+
     impl Clock {
+        fn normalize(&mut self) {
+            if let Some(val) = self.try_normalize() {
+                *self = val;
+            }
+        }
+        fn try_normalize(&self) -> Option<Self> {
+            todo!()
+        }
         fn event(&mut self, id: &ID) {
-            fn fill(val: &Clock, id: &ID) -> Option<Clock> {}
+            fn fill(val: &Clock, id: &ID) -> Option<Clock> {
+                todo!()
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 mod crdt {
-    use core::panic;
+    use std::cmp::{max, min};
 
     #[derive(Clone)]
     enum ID {
@@ -59,18 +59,47 @@ mod crdt {
     }
 
     impl Clock {
-        fn normalize(&mut self) {
-            if let Some(val) = self.try_normalize() {
-                *self = val;
+        pub fn event(&mut self, id: &ID) {}
+
+        fn fill(&mut self, id: &ID) -> Result<u32, u32> {
+            match (&mut self.children, id) {
+                (_, ID::Base(false)) => Err(self.min_val()),
+                (None, _) => Err(self.val),
+
+                (Some(children), ID::Base(true)) => {
+                    self.val += Self::max_val(&children.0, &children.1);
+                    self.children = None;
+                    Ok(self.val)
+                }
+
+                (Some(children), ID::Parent(children_ids)) => match &**children_ids {
+                    (ID::Base(true), id_r) => todo!(),
+                    (id_l, ID::Base(true)) => todo!(),
+                    (id_l, id_r) => todo!(),
+                },
             }
         }
-        fn try_normalize(&self) -> Option<Self> {
-            todo!()
+
+        fn max_val(l: &Self, r: &Self) -> u32 {
+            max(
+                l.val
+                    + match &l.children {
+                        None => 0,
+                        Some(children) => Self::max_val(&children.0, &children.1),
+                    },
+                r.val
+                    + match &r.children {
+                        None => 0,
+                        Some(children) => Self::max_val(&children.0, &children.1),
+                    },
+            )
         }
-        fn event(&mut self, id: &ID) {
-            fn fill(val: &Clock, id: &ID) -> Option<Clock> {
-                todo!()
-            }
+        fn min_val(&self) -> u32 {
+            self.val
+                + match &self.children {
+                    None => 0,
+                    Some(children) => min(children.0.min_val(), children.1.min_val()),
+                }
         }
     }
 }

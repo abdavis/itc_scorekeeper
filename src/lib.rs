@@ -67,32 +67,80 @@ mod crdt {
                 (None, _) => Err(self.val),
 
                 (Some(children), ID::Base(true)) => {
-                    self.val += Self::max_val(&children.0, &children.1);
+                    self.val = self.max_val();
                     self.children = None;
                     Ok(self.val)
                 }
 
-                (Some(children), ID::Parent(children_ids)) => match &**children_ids {
-                    (ID::Base(true), id_r) => todo!(),
-                    (id_l, ID::Base(true)) => todo!(),
-                    (id_l, id_r) => todo!(),
-                },
+                (Some(children), ID::Parent(children_ids)) => {
+                    let children_fill_results =
+                        if let Some(((mixed_child, owned_child), mixed_id)) = match &**children_ids
+                        {
+                            (ID::Base(true), mixed_id) => {
+                                Some(((&mut children.1, &mut children.0), mixed_id))
+                            }
+                            (mixed_id, ID::Base(true)) => {
+                                Some(((&mut children.0, &mut children.1), mixed_id))
+                            }
+                            _ => None,
+                        } {
+                            match mixed_child.fill(mixed_id) {
+                                Ok(val) => {
+                                    owned_child.val = max(owned_child.max_val(), val);
+                                    owned_child.children = None;
+                                    owned_child.val = max(owned_child.val, val);
+                                    Ok(self.val + min(owned_child.val, val))
+                                }
+                                Err(val) => {
+                                    let owned_max = owned_child.max_val();
+                                    let new_val = max(owned_max, val);
+                                    if new_val > owned_child.val {
+                                        owned_child.val = new_val;
+                                        owned_child.children = None;
+                                        Ok(self.val + min(owned_child.val, val))
+                                    } else if owned_max > owned_child.val {
+                                        owned_child.val = owned_max;
+                                        owned_child.children = None;
+                                        Ok(self.val + min(owned_child.val, val))
+                                    } else {
+                                        Err(self.val + min(owned_child.min_val(), val))
+                                    }
+                                }
+                            }
+                        } else {
+                            match (
+                                children.0.fill(&children_ids.0),
+                                children.1.fill(&children_ids.1),
+                            ) {
+                                (Err(l), Err(r)) => Err(self.val + min(l, r)),
+                                (Ok(l), Ok(r)) | (Ok(l), Err(r)) | (Err(l), Ok(r)) => {
+                                    Ok(self.val + min(l, r))
+                                }
+                            }
+                        };
+                    //todo! normalize the event tree if possible
+                    let raise_amount = min(children.0.val, children.1.val);
+                    self.val += raise_amount;
+                    children.0.val -= raise_amount;
+                    children.1.val -= raise_amount;
+
+                    if children.0.val == 0 && children.1.val == 0 {
+                        if let (None, None) = (&children.0.children, &children.1.children) {
+                            self.children = None;
+                        }
+                    }
+
+                    children_fill_results
+                }
             }
         }
 
-        fn max_val(l: &Self, r: &Self) -> u32 {
-            max(
-                l.val
-                    + match &l.children {
-                        None => 0,
-                        Some(children) => Self::max_val(&children.0, &children.1),
-                    },
-                r.val
-                    + match &r.children {
-                        None => 0,
-                        Some(children) => Self::max_val(&children.0, &children.1),
-                    },
-            )
+        fn max_val(&self) -> u32 {
+            self.val
+                + match &self.children {
+                    None => 0,
+                    Some(children) => max(children.0.max_val(), children.1.max_val()),
+                }
         }
         fn min_val(&self) -> u32 {
             self.val

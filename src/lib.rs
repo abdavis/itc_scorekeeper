@@ -1,4 +1,5 @@
 mod crdt {
+    use core::panic;
     use std::cmp::{max, min};
 
     #[derive(Clone)]
@@ -59,8 +60,110 @@ mod crdt {
     }
 
     impl Clock {
-        pub fn event(&mut self, id: &ID) {}
+        pub fn event(&mut self, id: &ID) {
+            if let Err(_) = self.fill(id) {
+                *self = self.grow(id).0;
+            }
+        }
 
+        // grow is run if fill is unsuccessful. it should try to minimize new branches
+        // and fill nodes closer to the root.
+        fn grow(&self, id: &ID) -> (Self, u32, u32) {
+            match (&self.children, id) {
+                (None, ID::Base(true)) => {
+                    let mut new = self.clone();
+                    new.val += 1;
+                    (new, 0, 0)
+                }
+                (None, ID::Parent(id_children)) => {
+                    let mut new = self.clone();
+                    new.children = Some(Box::new((
+                        Clock {
+                            val: 0,
+                            children: None,
+                        },
+                        Clock {
+                            val: 0,
+                            children: None,
+                        },
+                    )));
+                    let (grown, splits, distance) = new.grow(id);
+                    (grown, splits + 1, distance)
+                }
+                (Some(children), ID::Parent(id_children)) => match &**id_children {
+                    (ID::Base(false), my_id) => {
+                        let (grown, splits, distance) = children.1.grow(my_id);
+                        (
+                            Self {
+                                children: Some(Box::new((children.0.clone(), grown))),
+                                ..*self
+                            },
+                            splits,
+                            distance + 1,
+                        )
+                    }
+                    (my_id, ID::Base(false)) => {
+                        let (grown, splits, distance) = children.0.grow(my_id);
+                        (
+                            Self {
+                                children: Some(Box::new((grown, children.1.clone()))),
+                                ..*self
+                            },
+                            splits,
+                            distance + 1,
+                        )
+                    }
+                    (l_id, r_id) => {
+                        let (l_grown, l_splits, l_distance) = children.0.grow(l_id);
+                        let (r_grown, r_splits, r_distance) = children.1.grow(r_id);
+                        if l_splits < r_splits {
+                            (
+                                Self {
+                                    children: Some(Box::new((l_grown, children.1.clone()))),
+                                    ..*self
+                                },
+                                l_splits,
+                                l_distance + 1,
+                            )
+                        } else if r_splits < l_splits {
+                            (
+                                Self {
+                                    children: Some(Box::new((children.0.clone(), r_grown))),
+                                    ..*self
+                                },
+                                r_splits,
+                                r_distance + 1,
+                            )
+                        } else {
+                            if r_distance < l_distance {
+                                (
+                                    Self {
+                                        children: Some(Box::new((children.0.clone(), r_grown))),
+                                        ..*self
+                                    },
+                                    r_splits,
+                                    r_distance + 1,
+                                )
+                            } else {
+                                (
+                                    Self {
+                                        children: Some(Box::new((l_grown, children.1.clone()))),
+                                        ..*self
+                                    },
+                                    l_splits,
+                                    l_distance + 1,
+                                )
+                            }
+                        }
+                    }
+                },
+
+                (_, ID::Base(false)) => panic!("attempted to grow an un-owned part of the tree"),
+                (Some(_), ID::Base(true)) => {
+                    panic!("this should have resulted in a successful fill operation.")
+                }
+            }
+        }
         fn fill(&mut self, id: &ID) -> Result<u32, u32> {
             match (&mut self.children, id) {
                 (_, ID::Base(false)) => Err(self.min_val()),

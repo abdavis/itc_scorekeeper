@@ -238,6 +238,26 @@ mod crdt {
             }
         }
 
+        fn compare(&self, rhs: &Self) -> Comparison {
+            if rhs.max_val() - self.max_val() > 1 {
+                return Comparison::MissingEvents;
+            }
+            match (&self.children, &rhs.children) {
+                (None, None) => {
+                    if self.val < rhs.val {
+                        Comparison::Before
+                    } else if self.val > rhs.val {
+                        Comparison::After
+                    } else {
+                        Comparison::Identical
+                    }
+                }
+                (None, Some(_)) => todo!(),
+                (Some(_), None) => todo!(),
+                (Some(_), Some(_)) => todo!(),
+            }
+        }
+
         fn max_val(&self) -> u32 {
             self.val
                 + match &self.children {
@@ -252,5 +272,12 @@ mod crdt {
                     Some(children) => min(children.0.min_val(), children.1.min_val()),
                 }
         }
+    }
+    enum Comparison {
+        Before,
+        After,
+        MissingEvents,
+        Concurrent,
+        Identical,
     }
 }
